@@ -259,8 +259,15 @@ st.sidebar.markdown("---")
 st.sidebar.caption(f"Last refreshed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 
-@st.cache_resource(show_spinner=False)
 def get_broker(choice: str):
+    # NOTE: deliberately NOT cached with st.cache_resource. That cache is
+    # keyed only on `choice` (a fixed string), so if kite_token/dhan_token
+    # aren't part of the key, a stale broker built with an old/expired
+    # token would be reused forever after a fresh login — showing data
+    # that doesn't match the real account. Constructing these client
+    # objects is cheap and makes no network call, so there's no need to
+    # cache it; the cost we actually care about (the API calls) is cached
+    # separately below, keyed correctly.
     if choice == "Zerodha (Kite Connect)":
         return KiteBroker(kite_key, kite_token)
     if choice == "Dhan (DhanHQ)":
@@ -276,10 +283,27 @@ except Exception as e:
 
 
 @st.cache_data(ttl=30, show_spinner=False)
-def load_data(_broker):
-    positions = _broker.get_positions()
-    holdings = _broker.get_holdings()
-    orders = _broker.get_orders()
+def load_data(broker_name: str, token_fingerprint: str, _broker):
+    # `_broker` (leading underscore) is excluded from Streamlit's cache key,
+    # so broker_name + token_fingerprint are passed explicitly to make sure
+    # the cache actually invalidates when the active broker or its token
+    # changes (e.g. right after a fresh Kite login). Without this, stale
+    # data from a previous broker/token can keep being served.
+    try:
+        positions = _broker.get_positions()
+    except Exception as e:
+        st.sidebar.error(f"Failed to fetch positions: {e}")
+        positions = pd.DataFrame()
+    try:
+        holdings = _broker.get_holdings()
+    except Exception as e:
+        st.sidebar.error(f"Failed to fetch holdings: {e}")
+        holdings = pd.DataFrame()
+    try:
+        orders = _broker.get_orders()
+    except Exception as e:
+        st.sidebar.error(f"Failed to fetch orders: {e}")
+        orders = pd.DataFrame()
     try:
         margins = _broker.get_margins()
     except Exception:
@@ -287,7 +311,10 @@ def load_data(_broker):
     return positions, holdings, orders, margins
 
 
-positions_df, holdings_df, orders_df, margins = load_data(broker)
+_token_fingerprint = kite_token if broker_choice == "Zerodha (Kite Connect)" else (
+    dhan_token if broker_choice == "Dhan (DhanHQ)" else "demo"
+)
+positions_df, holdings_df, orders_df, margins = load_data(broker_choice, _token_fingerprint, broker)
 
 # --------------------------------------------------------------------------
 # Header
