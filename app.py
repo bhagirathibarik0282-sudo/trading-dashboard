@@ -190,9 +190,35 @@ st.sidebar.title("⚙️ Broker Settings")
 
 kite_key = get_secret("KITE_API_KEY")
 kite_secret = get_secret("KITE_API_SECRET")
-kite_token = get_secret("KITE_ACCESS_TOKEN")
+kite_token_env = get_secret("KITE_ACCESS_TOKEN")
 dhan_client = get_secret("DHAN_CLIENT_ID")
 dhan_token = get_secret("DHAN_ACCESS_TOKEN")
+
+# --------------------------------------------------------------------------
+# Kite Connect login flow
+# --------------------------------------------------------------------------
+# Zerodha access tokens expire daily. If a `request_token` shows up in the
+# URL (Zerodha redirects back here after login), exchange it for a fresh
+# access token and keep it in this browser session's state. Otherwise fall
+# back to KITE_ACCESS_TOKEN from the environment (useful right after you've
+# generated one manually and set it as a Railway variable).
+if "kite_access_token" not in st.session_state:
+    st.session_state.kite_access_token = None
+
+request_token = st.query_params.get("request_token")
+if request_token and kite_key and kite_secret and not st.session_state.kite_access_token:
+    try:
+        from kiteconnect import KiteConnect
+
+        _kite_login = KiteConnect(api_key=kite_key)
+        session_data = _kite_login.generate_session(request_token, api_secret=kite_secret)
+        st.session_state.kite_access_token = session_data["access_token"]
+        st.query_params.clear()
+        st.sidebar.success("Kite login successful — access token refreshed for this session.")
+    except Exception as e:
+        st.sidebar.error(f"Kite login failed: {e}")
+
+kite_token = st.session_state.kite_access_token or kite_token_env
 
 available_brokers = ["Demo"]
 if kite_key and kite_token:
@@ -208,6 +234,17 @@ elif broker_choice == "Dhan (DhanHQ)":
     st.sidebar.success("Connected via Dhan credentials")
 else:
     st.sidebar.info("No broker credentials found — showing simulated demo data.\nSee .env.example to connect a real account.")
+
+# Always show a Kite login link when we at least have an API key, since the
+# token expires every day and needs refreshing regardless of which broker
+# is currently active.
+if kite_key and kite_secret:
+    from kiteconnect import KiteConnect
+
+    _login_url = KiteConnect(api_key=kite_key).login_url()
+    st.sidebar.markdown(f"[🔑 Login with Kite (refresh today's token)]({_login_url})")
+elif kite_key and not kite_secret:
+    st.sidebar.caption("Set KITE_API_SECRET to enable one-click Kite login/token-refresh.")
 
 if st.sidebar.button("🔄 Refresh data"):
     st.cache_data.clear()
