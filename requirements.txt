@@ -1,0 +1,7 @@
+streamlit>=1.30.0
+pandas>=2.0.0
+numpy>=1.24.0
+scipy>=1.10.0
+plotly>=5.15.0
+kiteconnect>=4.2.0
+dhanhq>=1.2.0
