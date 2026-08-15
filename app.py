@@ -34,13 +34,18 @@ st.set_page_config(
 
 
 def get_secret(name: str) -> str:
-    """Read a credential from Streamlit secrets first, then env vars."""
+    """Read a credential from env vars first, then Streamlit secrets (if a
+    secrets.toml happens to exist). Env vars are the primary path here since
+    credentials are supplied as Railway variables, not a secrets file."""
+    value = os.environ.get(name, "")
+    if value:
+        return value
     try:
-        if name in st.secrets:
+        if hasattr(st, "secrets") and name in st.secrets:
             return str(st.secrets[name])
     except Exception:
         pass
-    return os.environ.get(name, "")
+    return ""
 
 
 # --------------------------------------------------------------------------
